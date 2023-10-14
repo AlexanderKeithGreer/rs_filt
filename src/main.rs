@@ -1,10 +1,16 @@
 use ndarray::*;
 use ndarray_rand::RandomExt;
 use ndarray_rand::rand_distr::Normal;
+use ndarray_rand::rand_distr::Uniform;
 use ndarray_npy::*;
 
+mod particle;
 
-struct SystemDyn {
+const NITER: usize = 1000;
+const NPART: usize = 320;
+
+#[derive(Clone)]
+pub struct SystemDyn {
     a_mat: ndarray::Array2<f64>,
     b_mat: ndarray::Array2<f64>,
     h_mat: ndarray::Array2<f64>,
@@ -55,7 +61,7 @@ impl SystemDyn {
 
         for i in 1..n_steps {
           //Multiply A by
-        //let a     = Array::random((2,        5), Uniform::new(0., 10.));
+          //let a     = Array::random((2,        5), Uniform::new(0., 10.));
           let mut u_mat = Array::random((n_states, 1), Normal::new(0., 1.).unwrap());
           u_mat = self.q_cov.dot(&u_mat);
 
@@ -64,8 +70,8 @@ impl SystemDyn {
 
           let mut upd_meas = self.h_mat.dot(&(upd_state.t()));
           upd_meas += &(self.r_cov.dot(&Array::random((n_obs, 1),
-                                                    Normal::new(0., 1.).unwrap())))
-                      .slice(s![..,0]);
+                                       Normal::new(0., 1.).unwrap())))
+                        .slice(s![..,0]);
 
           state.slice_mut(s![..,i as usize]).assign(&upd_state);
           meas.slice_mut(s![..,i as usize]).assign(&upd_meas);
@@ -85,11 +91,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                            [0.]],
                     array![[0., 1.]],
                     array![4., 0.],
-                    array![30.] );
-   let (meas, state) = sysdyn.run(1000);
+                    array![32.] );
+   let (meas, state) = sysdyn.run(NITER as u64);
+
+   let mut pars = vec![particle::ParticleSir::new(sysdyn.clone(),NPART as u64); NPART];
+   let mut pars_copy = vec![particle::ParticleSir::new(sysdyn,NPART as u64); NPART];
+   let mut pars_res: ndarray::Array2<f64> = Array::zeros((2, NPART));
+   let mut pars_csw: ndarray::Array1<f64> = Array::zeros(NPART);
+
+   let mut pars_ev: ndarray::Array2<f64> = Array::zeros((NITER, NPART));
+
+   for iter in 0..NITER {
+    let mut total_weight: f64 = 0.0;
+    //Draw and Weight
+    for par in 0..NPART {
+      pars[par].draw();
+      pars[par].weight(meas[[0,iter]]);
+
+      total_weight += pars[par].give_weight();
+      pars_csw[par] = total_weight;
+    }
+    //Normalise
+    for par in 0..NPART {
+      pars[par].normalise_weight(total_weight);
+      (pars_res[[0,par]], pars_res[[1,par]]) = pars[par].give_phase_weight();
+      pars_csw[par] = pars_csw[par]/total_weight;
+    }
+    pars_copy = pars.clone();
+
+    //Resample
+    let comp_start = Array::random(1, Uniform::new(0., 1./(NPART as f64) ))[0];
+    for par in 0..NPART {
+      let comp_csw = comp_start + 1./(NPART as f64) * (par as f64);
+      let mut comp_par = 0;
+      while comp_csw > pars_csw[comp_par] {
+        comp_par += 1;
+      }
+
+      pars[par] = pars_copy[comp_par].clone();
+    }
+
+    for par in 0..NPART {
+      pars_ev[[iter,par]] = pars[par].give_phase();
+    }
+
+  }
 
    write_npy("data/meas.npy", &meas)?;
    write_npy("data/state.npy", &state)?;
+   write_npy("data/par_res.npy", &pars_res)?;
+   write_npy("data/pars_ev.npy", &pars_ev)?;
 
     Ok(())
 }
