@@ -19,6 +19,9 @@ def main():
     state = np.load('data/state.npy')
     pars_res = np.load('data/par_res.npy')
     pars_ev = np.load('data/pars_ev.npy')
+    pars_gma = np.load('data/pars_gma.npy')
+    mean_res = np.load('data/mean_res.npy')
+    mean_gma = np.load('data/mean_gma.npy')
 
     print(pars_res)
     print("State:")
@@ -36,10 +39,16 @@ def main():
     plt.plot(pars_res[0,sortorder],pars_res[1,sortorder],marker='+')
 
     plt.figure()
+    plt.plot(mean_res, label="est", color='g')
     axis = np.floor(np.linspace(0,np.shape(pars_ev)[0]-1e-6,pars_ev.size))
-    plt.scatter(axis, pars_ev.flatten())
+    plt.scatter(axis, pars_ev.flatten(),marker='4')
     plt.plot(state[1,:],color='r')
+    plt.legend()
 
+    plt.figure()
+    plt.plot(mean_gma, label="est", color='g')
+    axis = np.floor(np.linspace(0, np.shape(pars_ev)[0]-1e-6, pars_ev.size))
+    plt.scatter(axis, pars_gma.flatten(),marker='4')
 
     plt.show()
 
